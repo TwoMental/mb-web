@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Modbus Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        .card {
+            background-color: #ffffff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 10px;
+        }
+
+        .container {
+            display: flex;
+            justify-content: center; /* Center all columns horizontally */
+            align-items: flex-start; /* Align items at the top */
+            width: 100%; /* Fill available space */
+            margin-top: 20px; /* Top margin */
+        }
+
+        .left-panel, .right-panel {
+            display: flex;
+            flex-direction: column; /* Stack items vertically */
+        }
+
+        .left-panel {
+            width: 25%; /* Left column width */
+            margin-right: 20px; /* Gap between left and right columns */
+        }
+
+        .right-panel {
+            width: 70%; /* Right column width */
+        }
+
+        h1, h2 {
+            color: #0056b3;
+        }
+
+        input[type="text"], input[type="number"] {
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: calc(100% - 16px); /* Full width minus padding */
+        }
+
+        .button-common {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0px;
+        }
+
+        .button-common:hover {
+            background-color: #0056b3;
+        }
+
+        .button-common:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .button-delete-all {
+            background-color: #cb3333; /* Red background */
+        }
+
+        .button-delete-all:hover {
+            background-color: #9f1717; /* Dark red background */
+        }
+
+        .input-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .input-address-name, .input-address {
+            flex: 1;
+            padding: 8px;
+            margin: 5px 0px;
+        }
+
+        .type-select {
+            margin: 5px 0px;
+        }
+
+        .decimal, .bytes {
+            min-width: 20%; /* Fixed width for results */
+            margin-left: 10px;
+            text-align: left;
+        }
+
+        .remove-btn {
+            padding: 0px 8px;
+            margin: 0px;
+            width: 24px;
+            height: 24px;
+            background-color: #cb3333; /* Red background */
+            color: white;
+            border: none;
+            border-radius: 100px;
+            cursor: pointer;
+        }
+
+        .remove-btn:hover {
+            background-color: #9f1717; /* Dark red background */
+        }
+
+        input.highlight {
+            border: 2px solid #ffcc00 !important; /* Border style used when highlighting (overrides defaults) */
+            transition: border-color 0.3s ease; /* Add a border-color transition */
+        }
+
+        .download-button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        /* Dropdown styles */
+        select {
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: 200px;
+        }
+        .download {
+            display: none;
+        }
+        .input-button-bottom {
+            display: none;
+        }
+
+        #versionInfo {
+            position: fixed;
+            bottom: 0;
+            color: rgba(121, 117, 117, 0.603);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: -1; /* Push element to the background with a negative z-index */
+        }
+
+        #conversionCard {
+            position: fixed;
+            top: 0;
+            z-index: 1000;
+            width: 100%;
+            background-color: #fffffff9;
+            margin-top: 0px;
+            padding: 15px 0px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-around; /* Evenly distribute conversion fields */
+            align-items: center; /* Vertically center items */
+        }
+
+        .conversion-container {
+            display: flex;
+            width: 90%; /* Stretch container to the card width */
+            justify-content: space-around; /* Space elements evenly */
+        }
+
+        .conversion-field {
+            display: flex;
+            flex-direction: column; /* Stack labels and inputs vertically */
+            align-items: center; /* Center align */
+            flex-grow: 1; /* Let each field share remaining space */
+            margin: 0px 10px; /* Spacing between fields */
+        }
+
+        .binary-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-left: 1px solid rgba(128, 128, 128, 0.3); /* Thin, gray, semi-transparent border */
+            border-right: 1px solid rgba(128, 128, 128, 0.3); /* Thin, gray, semi-transparent border */
+            padding: 0 20px;
+            flex: 0.5; /
+        }
+
+        .decimal-positive, .decimal-negative {
+            display: flex;
+            flex-direction: row;
+            flex: 1;
+            margin: 0 20px;  
+        }
+
+        .conversion-label {
+            color: #7a7a7a;
+            height: 20px; /* Label height */
+            margin-bottom: 5px; /* Spacing between label and input */
+        }
+    </style>
+</head>
+<body>
+    <div id="conversionCard" class="card card-config">
+        <div class="conversion-container">
+            <div class="decimal-positive">
+                <div class="conversion-field">
+                    <div class="conversion-label">Decimal (Positive)</div>
+                    <input type="text" id="decimal" class="conversion-input" placeholder="Double-click Value to autofill" oninput="convertFrom('decimal', 10)">
+                </div>
+                <div class="conversion-field">
+                    <div class="conversion-label">U16</div>
+                    <input type="text" id="U16" class="conversion-input" placeholder="Double-click Bytes to autofill" oninput="convertFrom('U16', 16)">
+                </div>
+                <div class="conversion-field">
+                    <div class="conversion-label">U32</div>
+                    <input type="text" id="U32" class="conversion-input" oninput="convertFrom('U32', 16)">
+                </div>
+            </div>
+            <div class="binary-section">
+                <div class="conversion-label">Binary</div>
+                <input type="text" id="binary" class="conversion-input" oninput="convertFrom('binary', 2)">
+            </div>
+            <div class="decimal-negative">
+                <div class="conversion-field">
+                    <div class="conversion-label">Decimal (Negative)</div>
+                    <input type="text" id="decimalm" class="conversion-input" oninput="convertFrom('decimalm', 10)">
+                </div>
+                <div class="conversion-field">
+                    <div class="conversion-label">S16</div>
+                    <input type="text" id="S16" class="conversion-input" oninput="convertFrom('S16', 16)">
+                </div>
+                <div class="conversion-field">
+                    <div class="conversion-label">S32</div>
+                    <input type="text" id="S32" class="conversion-input" oninput="convertFrom('S32', 16)">
+                </div>
+            </div>
+        </div>
+                     
+    </div>
+    <div class="container">
+        <div class="left-panel">
+            <div class="card card-config" id="modbusCard">
+                <!-- Modbus connection configuration -->
+                <h1>Connection</h1>
+                <label for="host">Host:</label>
+                <input type="text" id="host" value="192.168.1.200" placeholder="Enter host">
+                <label for="port">Port:</label>
+                <input type="number" id="port" value="502" min="1" max="65535" placeholder="Enter port">
+                <label for="slaveId">Slave ID:</label>
+                <input type="number" id="slaveId" value="1" min="0" max="247" placeholder="Enter slave ID (0-247)">
+                <button class="button-common" id="configureButton" onclick="configureServer()">Connect</button>
+                <p id="configResponse"></p>
+            </div>
+            <div class="card download" id="download">
+                <select id="resourceSelect">
+                </select>
+                <button class="download-button" onclick="downloadSelected()">Download</button>
+            </div>
+        </div>
+        <div class="right-panel">
+            <div class="card card-operation" id="valueCard">
+                <!-- Data retrieval operations -->
+                <h1>Read Data</h1>
+                <div id="input-button-top">
+                    <button class="button-common" onclick="addInput()">+ Add Address</button>
+                    <button class="button-common" onclick="callApi()">⏍ Read Values</button>
+                    <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
+                    <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                </div>
+                <div id="inputContainer">
+                </div>
+                <div class="input-button-bottom" id="input-button-bottom">
+                    <button class="button-common" onclick="addInput()">+ Add Address</button>
+                    <button class="button-common" onclick="callApi()">⏍ Read Values</button>
+                    <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
+                    <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    <div class="vsrsion-infos" id="versionInfo">
+        <span id="build-time"></span>
+        <span id="git-commit"></span>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            ajustForConversionCard();
+            needDownload();
+            loadServerConfig();
+            initAddresses();  // Restore saved addresses when the page loads
+            autoCal();  // Rebind conversion shortcuts automatically
+            versionInfo();
+        });
+
+        function ajustForConversionCard() {
+            const conversionCardHeight = document.getElementById('conversionCard').offsetHeight;
+            document.body.style.paddingTop = conversionCardHeight + 'px'; // Offset body padding to avoid overlap
+        }
+
+        function versionInfo() {
+            fetch("/version-info") // Request version information from the backend
+                .then(response => response.json())
+                .then(data => {
+                    const buildTime = document.getElementById("build-time");
+                    buildTime.textContent = `BuildTime: ${data.build_time}`;
+
+
+                    const gitCommit = document.getElementById("git-commit");
+                    gitCommit.textContent = `GitCommit: ${data.git_commit}`;
+                })
+                .catch(error => console.error("Error fetching data:", error));
+        }
+
+        function needDownload() {
+            fetch("/allow-download") // Request download permission from the backend
+                .then(response => response.json())
+                .then(data => {
+                    if (data.allow) { // Show download controls when proxying is enabled
+                        document.getElementById("download").style.display = "block";
+                        updateResourceList();
+                    }
+                })
+                .catch(error => console.error("Error fetching data:", error));
+        }
+
+        function updateResourceList() {
+            fetch("/resource-list") // Request the resource list from the backend
+                .then(response => response.json())
+                .then(data => {
+                    const resourceList = document.getElementById("resourceSelect");
+                    data.files.forEach(file => { // Populate the dropdown with the available files
+                        const option = document.createElement("option");
+                        option.textContent = file;
+                        option.value = file;
+                        resourceList.appendChild(option);
+                    });
+                })
+                .catch(error => console.error("Error fetching data:", error));
+        }
+
+        // Add double-click shortcuts for result fields
+        function autoCal() {
+            autoDecimal()
+            autoHex()
+        }
+
+        function autoDecimal() {
+            // Get every element with class 'decimal'
+            const decimalElements = document.querySelectorAll('.decimal');
+
+            // Iterate through each decimal element
+            decimalElements.forEach(decimalElement => {
+                // Bind a double-click listener
+                decimalElement.addEventListener('dblclick', () => {
+                    // Reference the target input element
+                    const targetInput = document.getElementById('decimal');
+                    
+                    // Copy the double-clicked decimal value
+                    targetInput.value = decimalElement.textContent;
+                    targetInput.classList.add('highlight'); // Add highlight styling
+
+                    setTimeout(() => {
+                        targetInput.classList.remove('highlight'); // Remove highlight styling
+                    }, 3000); // Remove the highlight after three seconds
+
+                    // Trigger conversion for the target input
+                    convertFrom('decimal', 10);
+                });
+            });
+        }
+
+        function autoHex() {
+            // Get every element with class 'bytes'
+            const decimalElements = document.querySelectorAll('.bytes');
+
+            // Iterate through each decimal element
+            decimalElements.forEach(decimalElement => {
+                // Bind a double-click listener
+                decimalElement.addEventListener('dblclick', () => {
+                    // Reference the target input element
+                    const targetInput = document.getElementById('hexadecimal');
+                    
+                    // Copy the double-clicked bytes text
+                    targetInput.value = decimalElement.textContent.replace('Bytes: ', '').replaceAll('0x', '').replace(' ', '');
+                    targetInput.classList.add('highlight'); // Add highlight styling
+
+                    setTimeout(() => {
+                        targetInput.classList.remove('highlight'); // Remove highlight styling
+                    }, 3000); // Remove the highlight after three seconds
+
+                    // Trigger conversion for the target input
+                    convertFrom('hexadecimal', 16);
+                });
+            });
+        }
+
+        function loadServerConfig() {
+            const storedHost = localStorage.getItem('host');
+            const storedPort = localStorage.getItem('port');
+            const storedSlaveId = localStorage.getItem('slaveId');
+
+            if (storedHost) {
+                document.getElementById('host').value = storedHost;
+            }
+            if (storedPort) {
+                document.getElementById('port').value = storedPort;
+            }
+            if (storedSlaveId) {
+                document.getElementById('slaveId').value = storedSlaveId;
+            }
+        }
+
+        function cleanAddress() {
+            const container = document.getElementById('inputContainer');
+            container.innerHTML = '';
+            inputButtonDisplay(); // Toggle the bottom action bar if needed
+        }
+
+        function initAddresses() {
+            const addresses = JSON.parse(localStorage.getItem('addresses'));
+            if (addresses) {
+                cleanAddress();
+                addresses.forEach(addr => addInput(addr.name, addr.id, addr.type));
+            } else {
+                addInput('', '', '4');
+            }
+        }
+
+        function saveAddresses() {
+            const rows = document.querySelectorAll('.input-row');
+            const addresses = Array.from(rows).map(row => {
+                const nameInput = row.querySelector('.input-address-name');
+                const addrInput = row.querySelector('.input-address');
+                const typeSelect = row.querySelector('.type-select');
+                return {
+                    name: nameInput.value,
+                    id: addrInput.value,
+                    type: typeSelect.value
+                };
+            });
+            localStorage.setItem('addresses', JSON.stringify(addresses));
+        }
+
+        function configureServer() {
+            document.getElementById('configResponse').textContent = ''
+
+            const button = document.getElementById('configureButton');
+            button.disabled = true;  // Disable button to prevent duplicate submissions
+            button.textContent = 'Connecting...';  // Update button label to show loading state
+            
+            const host = document.getElementById('host').value;
+            const port = parseInt(document.getElementById('port').value, 10); // Ensure the port is an integer
+            const slaveId = parseInt(document.getElementById('slaveId').value, 10); // Ensure the slave ID is an integer
+
+            if (isNaN(port) || port < 1 || port > 65535) {
+                alert("Enter a valid port (1-65535).");
+                return;
+            }
+            if (isNaN(slaveId) || slaveId < 0 || slaveId > 247) {
+                alert("Enter a valid slave ID (0-247).");
+                return;
+            }   
+
+            // Store the configuration in localStorage
+            localStorage.setItem('host', host);
+            localStorage.setItem('port', port.toString());
+            localStorage.setItem('slaveId', slaveId.toString());
+
+            fetch('/set-server', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    host: host,
+                    port: port,
+                    slave_id: slaveId  // Use snake_case to match the backend field
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    // Throw an error that the catch block can handle
+                    return response.json().then(j => {
+                        throw new Error('Something went wrong [' + response.status + '] ' + j.error);
+                    });
+                }
+                return response.json(); // Return the JSON payload
+            })
+            .then(data => {
+                document.getElementById('configResponse').textContent = 'Connected!';
+                // // Reorder cards
+                // setTimeout(() => {
+                //     // Logic to run after a successful connection
+                //     const modbusCard = document.getElementById('modbusCard');
+                //     const conversionCard = document.getElementById('conversionCard');
+                //     const container = modbusCard.parentNode;
+
+                //     // Remove the current elements
+                //     container.removeChild(modbusCard);
+                //     container.removeChild(conversionCard);
+
+                //     // Append elements in the new order
+                //     container.insertBefore(conversionCard, container.firstChild); // Move the conversion card to the top
+                //     container.appendChild(modbusCard); // Move the Modbus card to the bottom
+                // }, 1000); // Delay one second to simulate the connection
+            })
+            .catch(error => {
+                document.getElementById('configResponse').textContent = error;
+                document.getElementById('configResponse').classList.add('error');
+            })
+            .finally(() => {
+                button.disabled = false;  // Restore the button state
+                button.textContent = 'Reconnect';  // Restore the original button text
+            });
+        }
+
+        function inputButtonDisplay() {
+            const container = document.getElementById('inputContainer');
+            if (container.children.length > 10) {
+                const inputButtonBottom = document.getElementById('input-button-bottom');
+                inputButtonBottom.style.display = 'block';
+            } else {
+                const inputButtonBottom = document.getElementById('input-button-bottom');
+                inputButtonBottom.style.display = 'none';
+            }
+        }
+
+        var sortDirection = false;
+
+        function sortInputRows() {
+            const container = document.getElementById('inputContainer');
+            let rows = Array.from(container.getElementsByClassName('input-row'));
+
+            let nullDefault = 655300;
+            if (sortDirection) {
+                nullDefault = 0;
+            }
+
+            // Read each input-address value and compare numerically
+            rows.sort((a, b) => {
+                const aValue = parseInt(a.querySelector('.input-address').value, 10) || nullDefault;
+                const bValue = parseInt(b.querySelector('.input-address').value, 10) || nullDefault;
+                if (sortDirection) {
+                    return bValue - aValue;
+                }
+                return aValue - bValue;
+            });
+
+            // Clear the container and append the sorted rows
+            container.innerHTML = '';
+            rows.forEach(row => container.appendChild(row));
+
+            // Toggle the sort direction
+            sortDirection = !sortDirection;
+            if (sortDirection) {
+                document.querySelectorAll('.button-sort-addr').forEach(button => button.textContent = '↑ Sort Addresses');
+
+            } else {
+                document.querySelectorAll('.button-sort-addr').forEach(button => button.textContent = '↓ Sort Addresses');
+            }
+        }
+
+        const typeOptions = [
+            { value: '1', text: 'Coil (0x01)' },
+            { value: '2', text: 'Discrete Input (0x02)' },
+            { value: '3', text: 'Input Register (0x04)' },
+            { value: '4', text: 'Holding Register (0x03)' }
+        ];
+
+        function addInput(name = '', addr = '', type = '4') {
+            const container = document.getElementById('inputContainer');
+            const inputRow = document.createElement('div');
+            inputRow.className = 'input-row';
+
+            const addrNameInput = document.createElement('input');
+            addrNameInput.type = 'text';
+            addrNameInput.placeholder = 'Address label (optional)';
+            addrNameInput.value = name;  // Set the default value
+            addrNameInput.className = 'input-address-name';
+
+
+            const typeSelect = document.createElement('select');
+            typeSelect.className = 'type-select';
+            typeOptions.forEach(option => {
+                let opt = document.createElement('option');
+                opt.value = option.value;
+                opt.textContent = option.text;
+                opt.selected = option.value === type; // Select the matching option by default
+                typeSelect.appendChild(opt);
+            });
+
+            const addrInput = document.createElement('input');
+            addrInput.type = 'text';
+            addrInput.placeholder = 'Address ID';
+            addrInput.value = addr;  // Set the default value
+            addrInput.className = 'input-address';
+
+            const decimalSpan = document.createElement('span');
+            decimalSpan.className = 'decimal';
+            decimalSpan.textContent = 'Value';
+
+            const bytesSpan = document.createElement('span');
+            bytesSpan.className = 'bytes';
+            bytesSpan.textContent = 'Bytes Value';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = 'X';
+            removeBtn.className = 'remove-btn';
+            removeBtn.onclick = function() { removeInputRow(inputRow); }; // Attach the event handler
+
+            inputRow.appendChild(addrNameInput);
+            inputRow.appendChild(addrInput);
+            inputRow.appendChild(typeSelect);
+            inputRow.appendChild(decimalSpan);
+            inputRow.appendChild(bytesSpan);
+            inputRow.appendChild(removeBtn);
+            container.appendChild(inputRow);
+
+            saveAddresses();
+            autoCal();  // Rebind double-click shortcuts after adding a row
+            inputButtonDisplay(); // Toggle the bottom action bar if needed
+        }
+
+        function removeInputRow(row) {
+            // Remove the row from the DOM
+            row.parentNode.removeChild(row);
+            saveAddresses();
+            inputButtonDisplay(); // Toggle the bottom action bar if needed
+        }
+
+        function callApi() {
+            saveAddresses()
+            const results = document.querySelectorAll('.result');
+            const rows = document.querySelectorAll('.input-row');
+            const data = Array.from(rows).map(row => {
+                const address = row.querySelector('.input-address').value; // Address input field
+                const type = row.querySelector('.type-select').value; // Register type dropdown
+
+                return {
+                    register_type: parseInt(type, 10), // Ensure the type is numeric
+                    address: parseInt(address, 10) // Ensure the address is numeric
+                };
+            });
+
+            
+            fetch('/get-value', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ids: data,
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    // Throw an error that the catch block can handle
+                    return response.json().then(j => {
+                        throw new Error('Something went wrong [' + response.status + '] ' + j.error);
+                    });
+                }
+                return response.json(); // Return the JSON payload
+            })
+            .then(data => {
+                const rows = document.querySelectorAll('.input-row');
+                data.forEach((result, index) => {
+                    const decimalValue = result.decimal; // Assuming result object has a 'decimal' key
+                    const bytesValue = result.bytes.join(' '); // Assuming result object has a 'bytes' key, join bytes into a string
+                    rows[index].querySelector('.decimal').textContent = `${decimalValue}`;
+                    rows[index].querySelector('.bytes').textContent = `Bytes: ${bytesValue}`;
+                });
+            })
+            .catch(error => {
+                alert(error.message); // Display error notification
+            });
+        }
+
+        function convertFrom(sourceId, base) {
+            const sourceInput = document.getElementById(sourceId);
+            let value = 0;
+            if (sourceId === 'decimalm') {
+                // Convert the signed value to an integer
+                value = parseInt(sourceInput.value.replace('-', ''), base);
+                value = -1 * value
+            } else {
+                value = parseInt(sourceInput.value, base);
+            }
+
+            if (isNaN(value)) {
+                resetInputs();
+                return;
+            }
+
+            binary = int2binary(value);
+            document.getElementById('binary').value = binary;
+            document.getElementById('decimal').value = value.toString(10);
+            document.getElementById('decimalm').value = binaryToNegtiveInt(binary);
+            document.getElementById('S16').value = int2hex(value, 16, true).toUpperCase();
+            document.getElementById('S32').value = int2hex(value, 32, true).toUpperCase();
+            document.getElementById('U16').value = int2hex(value, 16, true).toUpperCase();
+            document.getElementById('U32').value = int2hex(value, 32, true).toUpperCase();
+
+            if ( sourceId === 'decimalm')  {
+                // document.getElementById('decimal').value = '';
+                document.getElementById('U16').value = '';
+                document.getElementById('U32').value = '';
+            } else if (sourceId == "decimal" || sourceId == "U16" || sourceId == "U32") {
+                document.getElementById('decimalm').value = '';
+                document.getElementById('S16').value = '';
+                document.getElementById('S32').value = '';
+            } else if (sourceId == "binary") {
+                document.getElementById('S16').value = int2hex(binaryToNegtiveInt(binary), 16, true).toUpperCase();
+                document.getElementById('S32').value = int2hex(binaryToNegtiveInt(binary), 32, true).toUpperCase();
+            }
+        }
+
+        function int2binary(num) {
+            // Determine whether the input is positive or negative
+            if (num >= 0) {
+                // Convert positive numbers directly to binary
+                return num.toString(2);
+            } else {
+                // Handle negative values
+                let absValue = Math.abs(num); // Take the absolute value
+                let binaryStr = absValue.toString(2); // Convert to a binary string
+                
+                // Determine bit length and add one for the sign
+                let bitSize = binaryStr.length + 1;
+                
+                // Pad to the calculated length
+                let paddedBinaryStr = binaryStr.padStart(bitSize, '0');
+                
+                // Invert each bit
+                let invertedBinary = '';
+                for (let i = 0; i < paddedBinaryStr.length; i++) {
+                    invertedBinary += paddedBinaryStr[i] === '0' ? '1' : '0';
+                }
+                
+                // Add one to the inverted bits to produce two's complement
+                let carry = 1;
+                let twosComplement = '';
+                for (let i = bitSize - 1; i >= 0; i--) {
+                    let bit = parseInt(invertedBinary[i]) + carry;
+                    if (bit === 2) {
+                        carry = 1;
+                        bit = 0;
+                    } else {
+                        carry = 0;
+                    }
+                    twosComplement = bit + twosComplement;
+                }
+                
+                // Ensure the result keeps the requested width
+                return twosComplement.padStart(bitSize, '0');
+            }
+        }
+
+        function int2hex(num, bitSize, fill) {
+            // Return early if the value exceeds the bit width
+            if ((num > Math.pow(2, bitSize) - 1) || num < -Math.pow(2, bitSize)) {
+                return '';
+            }
+                
+            if (num >= 0) {
+                // Positive values convert directly to hexadecimal
+                if (fill) {
+                    return num.toString(16).toUpperCase().padStart(bitSize / 4, '0');
+                }
+                return num.toString(16).toUpperCase();
+            } else {
+                // Handle negative values
+                // Determine the required bit width
+                if (!fill) {
+                    if (num >= -128) {
+                    bitSize = 8;  // 8 bits
+                    } else if (num >= -32768) {
+                        bitSize = 16; // 16 bits
+                    } else if (num >= -2147483648) {
+                        bitSize = 32; // 32 bits
+                    } else {
+                        bitSize = 64; // 64 bits
+                    }
+                }
+                
+                // Compute a mask for the chosen width
+                let mask = (1 << bitSize) - 1;
+                let hex = ((num & mask) >>> 0).toString(16).toUpperCase();
+
+                // Ensure the hex string length matches the width
+                return hex.padStart(bitSize / 4, '0'); // Every four binary digits correspond to one hex character
+            }
+        }
+
+        function binaryToNegtiveInt(binaryStr) {
+            // Check whether the most significant bit indicates a negative number
+            if (binaryStr[0] === '1') {
+                // Invert the bits
+                let invertedBinary = '';
+                for (let i = 0; i < binaryStr.length; i++) {
+                    invertedBinary += binaryStr[i] === '0' ? '1' : '0';
+                }
+
+                // Convert to decimal and add one
+                let positiveNumber = parseInt(invertedBinary, 2) + 1;
+
+                // Return the negative result
+                return -positiveNumber;
+            } else {
+                // Convert directly to decimal for positive numbers
+                return parseInt(binaryStr, 2);
+            }
+        }
+
+        function resetInputs() {
+            document.getElementById('binary').value = '';
+            document.getElementById('decimal').value = '';
+            document.getElementById('decimalm').value = '';
+            document.getElementById('U16').value = '';
+            document.getElementById('U32').value = '';
+            document.getElementById('S16').value = '';
+            document.getElementById('S32').value = '';
+        }
+
+        function downloadSelected() {
+            const selectElement = document.getElementById('resourceSelect');
+            const selectedValue = selectElement.value; // Read the selected option
+
+            // Create a hidden anchor to trigger the download
+            const link = document.createElement('a');
+            link.href = `/downloads/${selectedValue}`; // Build the download URL
+            link.setAttribute('download', ''); // Set the download attribute
+            document.body.appendChild(link); // Attach the anchor to the page
+            link.click(); // Click the anchor programmatically
+            document.body.removeChild(link); // Remove the anchor afterwards
+        }
+    </script>
+</body>
+</html>
