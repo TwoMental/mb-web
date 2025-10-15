@@ -386,25 +386,43 @@
 
         function autoHex() {
             // Get every element with class 'bytes'
-            const decimalElements = document.querySelectorAll('.bytes');
+            const byteElements = document.querySelectorAll('.bytes');
 
-            // Iterate through each decimal element
-            decimalElements.forEach(decimalElement => {
+            // Iterate through each bytes element
+            byteElements.forEach(byteElement => {
                 // Bind a double-click listener
-                decimalElement.addEventListener('dblclick', () => {
-                    // Reference the target input element
-                    const targetInput = document.getElementById('hexadecimal');
-                    
-                    // Copy the double-clicked bytes text
-                    targetInput.value = decimalElement.textContent.replace('Bytes: ', '').replaceAll('0x', '').replace(' ', '');
-                    targetInput.classList.add('highlight'); // Add highlight styling
+                byteElement.addEventListener('dblclick', () => {
+                    const rawText = byteElement.textContent.replace('Bytes:', '').trim();
+                    if (!rawText) {
+                        return;
+                    }
 
-                    setTimeout(() => {
-                        targetInput.classList.remove('highlight'); // Remove highlight styling
-                    }, 3000); // Remove the highlight after three seconds
+                    const hexPairs = rawText.split(/\s+/).map(fragment => fragment.replace(/0x/gi, ''));
+                    const hexString = hexPairs.join('').toUpperCase();
+                    if (!hexString) {
+                        return;
+                    }
 
-                    // Trigger conversion for the target input
-                    convertFrom('hexadecimal', 16);
+                    const padded16 = hexString.padStart(4, '0');
+                    const padded32 = hexString.padStart(8, '0');
+
+                    const u16Input = document.getElementById('U16');
+                    const u32Input = document.getElementById('U32');
+
+                    if (!u16Input || !u32Input) {
+                        return;
+                    }
+
+                    u16Input.value = padded16;
+                    u32Input.value = padded32;
+
+                    [u16Input, u32Input].forEach(input => {
+                        input.classList.add('highlight');
+                        setTimeout(() => input.classList.remove('highlight'), 3000);
+                    });
+
+                    // Trigger conversion for 32-bit representation
+                    convertFrom('U32', 16);
                 });
             });
         }
@@ -457,12 +475,11 @@
         }
 
         function configureServer() {
-            document.getElementById('configResponse').textContent = ''
+            const responseDisplay = document.getElementById('configResponse');
+            responseDisplay.textContent = '';
+            responseDisplay.classList.remove('error');
 
             const button = document.getElementById('configureButton');
-            button.disabled = true;  // Disable button to prevent duplicate submissions
-            button.textContent = 'Connecting...';  // Update button label to show loading state
-            
             const host = document.getElementById('host').value;
             const port = parseInt(document.getElementById('port').value, 10); // Ensure the port is an integer
             const slaveId = parseInt(document.getElementById('slaveId').value, 10); // Ensure the slave ID is an integer
@@ -475,6 +492,9 @@
                 alert("Enter a valid slave ID (0-247).");
                 return;
             }   
+
+            button.disabled = true;  // Disable button to prevent duplicate submissions
+            button.textContent = 'Connecting...';  // Update button label to show loading state
 
             // Store the configuration in localStorage
             localStorage.setItem('host', host);
@@ -502,7 +522,8 @@
                 return response.json(); // Return the JSON payload
             })
             .then(data => {
-                document.getElementById('configResponse').textContent = 'Connected!';
+                responseDisplay.textContent = 'Connected!';
+                responseDisplay.classList.remove('error');
                 // // Reorder cards
                 // setTimeout(() => {
                 //     // Logic to run after a successful connection
@@ -520,12 +541,12 @@
                 // }, 1000); // Delay one second to simulate the connection
             })
             .catch(error => {
-                document.getElementById('configResponse').textContent = error;
-                document.getElementById('configResponse').classList.add('error');
+                responseDisplay.textContent = error?.message ?? String(error);
+                responseDisplay.classList.add('error');
             })
             .finally(() => {
                 button.disabled = false;  // Restore the button state
-                button.textContent = 'Reconnect';  // Restore the original button text
+                button.textContent = 'Connect';  // Restore the original button text
             });
         }
 
@@ -692,138 +713,138 @@
 
         function convertFrom(sourceId, base) {
             const sourceInput = document.getElementById(sourceId);
-            let value = 0;
-            if (sourceId === 'decimalm') {
-                // Convert the signed value to an integer
-                value = parseInt(sourceInput.value.replace('-', ''), base);
-                value = -1 * value
-            } else {
-                value = parseInt(sourceInput.value, base);
+            if (!sourceInput) {
+                return;
             }
 
-            if (isNaN(value)) {
+            const rawValue = sourceInput.value ?? '';
+            const sanitized = sanitizeInput(rawValue, base);
+            if (!sanitized) {
                 resetInputs();
                 return;
             }
 
-            binary = int2binary(value);
-            document.getElementById('binary').value = binary;
-            document.getElementById('decimal').value = value.toString(10);
-            document.getElementById('decimalm').value = binaryToNegtiveInt(binary);
-            document.getElementById('S16').value = int2hex(value, 16, true).toUpperCase();
-            document.getElementById('S32').value = int2hex(value, 32, true).toUpperCase();
-            document.getElementById('U16').value = int2hex(value, 16, true).toUpperCase();
-            document.getElementById('U32').value = int2hex(value, 32, true).toUpperCase();
-
-            if ( sourceId === 'decimalm')  {
-                // document.getElementById('decimal').value = '';
-                document.getElementById('U16').value = '';
-                document.getElementById('U32').value = '';
-            } else if (sourceId == "decimal" || sourceId == "U16" || sourceId == "U32") {
-                document.getElementById('decimalm').value = '';
-                document.getElementById('S16').value = '';
-                document.getElementById('S32').value = '';
-            } else if (sourceId == "binary") {
-                document.getElementById('S16').value = int2hex(binaryToNegtiveInt(binary), 16, true).toUpperCase();
-                document.getElementById('S32').value = int2hex(binaryToNegtiveInt(binary), 32, true).toUpperCase();
+            if (!isValidForBase(sanitized, base)) {
+                resetInputs();
+                return;
             }
+
+            const parsedValue = parseInt(sanitized, base);
+            if (Number.isNaN(parsedValue)) {
+                resetInputs();
+                return;
+            }
+
+            const bitWidth = determineBitWidth(sourceId, sanitized, parsedValue, base);
+            const modulo = bitWidth === 32 ? 0x100000000 : 0x10000;
+            const unsignedValue = wrapUnsigned(parsedValue, modulo);
+            const signedValue = unsignedValue >= modulo / 2 ? unsignedValue - modulo : unsignedValue;
+
+            const unsigned16 = wrapUnsigned(parsedValue, 0x10000);
+            const signed16 = unsigned16 >= 0x8000 ? unsigned16 - 0x10000 : unsigned16;
+
+            const unsigned32 = wrapUnsigned(parsedValue, 0x100000000);
+            const signed32 = unsigned32 >= 0x80000000 ? unsigned32 - 0x100000000 : unsigned32;
+
+            const binaryValue = formatBinary(bitWidth === 32 ? unsigned32 : unsigned16, bitWidth);
+
+            setInputValue('binary', binaryValue);
+            setInputValue('decimal', (bitWidth === 32 ? unsigned32 : unsigned16).toString(10));
+            setInputValue('decimalm', (bitWidth === 32 ? signed32 : signed16).toString(10));
+            setInputValue('U16', formatHex(unsigned16, 4));
+            setInputValue('S16', formatHex(unsigned16, 4));
+            setInputValue('U32', bitWidth === 32 ? formatHex(unsigned32, 8) : '');
+            setInputValue('S32', bitWidth === 32 ? formatHex(unsigned32, 8) : '');
         }
 
-        function int2binary(num) {
-            // Determine whether the input is positive or negative
-            if (num >= 0) {
-                // Convert positive numbers directly to binary
-                return num.toString(2);
-            } else {
-                // Handle negative values
-                let absValue = Math.abs(num); // Take the absolute value
-                let binaryStr = absValue.toString(2); // Convert to a binary string
-                
-                // Determine bit length and add one for the sign
-                let bitSize = binaryStr.length + 1;
-                
-                // Pad to the calculated length
-                let paddedBinaryStr = binaryStr.padStart(bitSize, '0');
-                
-                // Invert each bit
-                let invertedBinary = '';
-                for (let i = 0; i < paddedBinaryStr.length; i++) {
-                    invertedBinary += paddedBinaryStr[i] === '0' ? '1' : '0';
-                }
-                
-                // Add one to the inverted bits to produce two's complement
-                let carry = 1;
-                let twosComplement = '';
-                for (let i = bitSize - 1; i >= 0; i--) {
-                    let bit = parseInt(invertedBinary[i]) + carry;
-                    if (bit === 2) {
-                        carry = 1;
-                        bit = 0;
-                    } else {
-                        carry = 0;
-                    }
-                    twosComplement = bit + twosComplement;
-                }
-                
-                // Ensure the result keeps the requested width
-                return twosComplement.padStart(bitSize, '0');
-            }
-        }
-
-        function int2hex(num, bitSize, fill) {
-            // Return early if the value exceeds the bit width
-            if ((num > Math.pow(2, bitSize) - 1) || num < -Math.pow(2, bitSize)) {
+        function sanitizeInput(value, base) {
+            let trimmed = (value || '').trim();
+            if (!trimmed) {
                 return '';
             }
-                
-            if (num >= 0) {
-                // Positive values convert directly to hexadecimal
-                if (fill) {
-                    return num.toString(16).toUpperCase().padStart(bitSize / 4, '0');
-                }
-                return num.toString(16).toUpperCase();
-            } else {
-                // Handle negative values
-                // Determine the required bit width
-                if (!fill) {
-                    if (num >= -128) {
-                    bitSize = 8;  // 8 bits
-                    } else if (num >= -32768) {
-                        bitSize = 16; // 16 bits
-                    } else if (num >= -2147483648) {
-                        bitSize = 32; // 32 bits
-                    } else {
-                        bitSize = 64; // 64 bits
-                    }
-                }
-                
-                // Compute a mask for the chosen width
-                let mask = (1 << bitSize) - 1;
-                let hex = ((num & mask) >>> 0).toString(16).toUpperCase();
 
-                // Ensure the hex string length matches the width
-                return hex.padStart(bitSize / 4, '0'); // Every four binary digits correspond to one hex character
+            if (base === 16) {
+                let sign = '';
+                if (trimmed.startsWith('-')) {
+                    sign = '-';
+                    trimmed = trimmed.slice(1);
+                } else if (trimmed.startsWith('+')) {
+                    trimmed = trimmed.slice(1);
+                }
+                trimmed = trimmed.replace(/0x/gi, '').replace(/\s+/g, '');
+                return (sign + trimmed).toUpperCase();
             }
+
+            if (base === 2) {
+                return trimmed.replace(/\s+/g, '');
+            }
+
+            return trimmed;
         }
 
-        function binaryToNegtiveInt(binaryStr) {
-            // Check whether the most significant bit indicates a negative number
-            if (binaryStr[0] === '1') {
-                // Invert the bits
-                let invertedBinary = '';
-                for (let i = 0; i < binaryStr.length; i++) {
-                    invertedBinary += binaryStr[i] === '0' ? '1' : '0';
-                }
+        function isValidForBase(value, base) {
+            const patternByBase = {
+                2: /^-?[01]+$/,
+                10: /^-?\d+$/,
+                16: /^-?[0-9a-fA-F]+$/
+            };
+            const pattern = patternByBase[base];
+            return pattern ? pattern.test(value) : true;
+        }
 
-                // Convert to decimal and add one
-                let positiveNumber = parseInt(invertedBinary, 2) + 1;
-
-                // Return the negative result
-                return -positiveNumber;
-            } else {
-                // Convert directly to decimal for positive numbers
-                return parseInt(binaryStr, 2);
+        function determineBitWidth(sourceId, sanitized, value, base) {
+            if (sourceId === 'U32' || sourceId === 'S32') {
+                return 32;
             }
+
+            if (sourceId === 'decimal') {
+                if (value < 0 || value > 0xFFFF) {
+                    return 32;
+                }
+                return 16;
+            }
+
+            if (sourceId === 'decimalm') {
+                if (value < -0x8000 || value > 0x7FFF) {
+                    return 32;
+                }
+                return 16;
+            }
+
+            if (sourceId === 'binary') {
+                return sanitized.length > 16 ? 32 : 16;
+            }
+
+            if (base === 16 && sanitized.replace(/^-/, '').length > 4) {
+                return 32;
+            }
+
+            if (Math.abs(value) > 0xFFFF) {
+                return 32;
+            }
+
+            return 16;
+        }
+
+        function wrapUnsigned(value, modulo) {
+            const wrapped = ((value % modulo) + modulo) % modulo;
+            return wrapped;
+        }
+
+        function formatHex(value, digits) {
+            return value.toString(16).toUpperCase().padStart(digits, '0');
+        }
+
+        function formatBinary(value, bitWidth) {
+            return value.toString(2).padStart(bitWidth, '0');
+        }
+
+        function setInputValue(id, value) {
+            const input = document.getElementById(id);
+            if (!input) {
+                return;
+            }
+            input.value = value;
         }
 
         function resetInputs() {

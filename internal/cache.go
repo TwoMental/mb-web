@@ -7,7 +7,7 @@ import (
 
 var (
 	lock    sync.Mutex
-	clients = make(map[string]ModbusServer)
+	clients = make(map[string]*ModbusServer)
 )
 
 func DeleteConn(key string) {
@@ -19,13 +19,13 @@ func DeleteConn(key string) {
 	}
 }
 
-func SaveConn(key string, client ModbusServer) {
+func SaveConn(key string, client *ModbusServer) {
 	lock.Lock()
 	defer lock.Unlock()
 	clients[key] = client
 }
 
-func GetConn(key string) (ModbusServer, bool) {
+func GetConn(key string) (*ModbusServer, bool) {
 	lock.Lock()
 	defer lock.Unlock()
 	client, ok := clients[key]

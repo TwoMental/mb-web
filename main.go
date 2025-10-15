@@ -185,10 +185,9 @@ func getValueHandler(c *gin.Context) {
 			)
 			return
 		}
-		if len(rr) > 0 {
-			results[i] = valueDetail{binary.BigEndian.Uint16(rr), internal.BytesToHexStrings(rr)}
-		} else {
-			results[i] = valueDetail{}
+		results[i] = valueDetail{
+			Decimal: decodeRegisterValue(rr),
+			Bytes:   internal.BytesToHexStrings(rr),
 		}
 	}
 	c.JSON(http.StatusOK, results)
@@ -206,4 +205,15 @@ func resourceListHandler(c *gin.Context) {
 		res = append(res, file.Name())
 	}
 	c.JSON(http.StatusOK, gin.H{"files": res})
+}
+
+func decodeRegisterValue(data []byte) uint16 {
+	switch len(data) {
+	case 0:
+		return 0
+	case 1:
+		return uint16(data[0])
+	default:
+		return binary.BigEndian.Uint16(data[:2])
+	}
 }

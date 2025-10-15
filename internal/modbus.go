@@ -20,7 +20,7 @@ type ModbusConfig struct {
 	SlaveID int    `json:"slave_id" binding:"required" validate:"gte=1,lte=255"`
 }
 
-func ConnModbus(config ModbusConfig) (ModbusServer, error) {
+func ConnModbus(config ModbusConfig) (*ModbusServer, error) {
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	log.Printf("Connecting to Modbus server at %s\n", addr)
 	handler := modbus.NewTCPClientHandler(addr)
@@ -30,9 +30,9 @@ func ConnModbus(config ModbusConfig) (ModbusServer, error) {
 
 	err := handler.Connect()
 	if err != nil {
-		return ModbusServer{}, err
+		return nil, err
 	}
 
 	client := modbus.NewClient(handler)
-	return ModbusServer{H: handler, C: client, LastAlive: time.Now()}, nil
+	return &ModbusServer{H: handler, C: client, LastAlive: time.Now()}, nil
 }
