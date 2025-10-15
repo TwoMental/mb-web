@@ -73,6 +73,16 @@ All endpoints respond with JSON.
 - `static/index.html` — The single-page interface loaded at `/home`.
 - `downloads/` — Optional artifacts exposed when `-proxyDownload` is enabled.
 
+## TODOs
+- [ ] Modbus RTU
+- [ ] Write
+- [ ] Auto reconnect
+- [ ] Read/Write block (multiple register)
+- [ ] Setting upload/download
+- [ ] Ignore register
+- [ ] Auto refresh (only for read)
+- [ ] Multi connection
+
 ## License
 
 This project is distributed under the [Apache 2.0 License](LICENSE).
