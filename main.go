@@ -64,7 +64,7 @@ func main() {
 
 	r.POST("/set-server", setServerHandler)
 	r.POST("/get-value", getValueHandler)
-	// r.POST("/set-value", setValueHandler)
+	r.POST("/set-value", setValueHandler)
 
 	r.GET("/version-info", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"build_time": BuildTime, "git_commit": GitCommit[:8]})
@@ -146,6 +146,23 @@ type valueDetail struct {
 	Bytes   []string `json:"bytes"`
 }
 
+type setValueRequest struct {
+	Items []writeValueRequest `json:"items" binding:"required"`
+}
+
+type writeValueRequest struct {
+	RegisterType internal.RegisterType `json:"register_type"`
+	Address      uint16                `json:"address"`
+	Value        uint16                `json:"value"`
+}
+
+type writeResult struct {
+	RegisterType internal.RegisterType `json:"register_type"`
+	Address      uint16                `json:"address"`
+	Status       string                `json:"status"`
+	Error        string                `json:"error,omitempty"`
+}
+
 // getValueHandler retrieves values from the Modbus server
 func getValueHandler(c *gin.Context) {
 	req := getValueRequest{}
@@ -215,6 +232,63 @@ func serialPortsHandler(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ports": ports})
+}
+
+func setValueHandler(c *gin.Context) {
+	req := setValueRequest{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.Items) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "items must not be empty"})
+		return
+	}
+
+	client, ok := internal.GetConn(internal.GetUserID(c))
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No Modbus server connected"})
+		return
+	}
+	client.LastAlive = time.Now()
+
+	results := make([]writeResult, len(req.Items))
+	hasError := false
+	for i, item := range req.Items {
+		result := writeResult{RegisterType: item.RegisterType, Address: item.Address}
+		var err error
+
+		switch item.RegisterType {
+		case internal.RegisterTypeCoil:
+			value := uint16(0x0000)
+			if item.Value != 0 {
+				value = 0xFF00
+			}
+			_, err = client.Client.WriteSingleCoil(item.Address, value)
+		case internal.RegisterTypeHoldingRegister, internal.RegisterTypeDefault:
+			_, err = client.Client.WriteSingleRegister(item.Address, item.Value)
+		default:
+			err = fmt.Errorf("register type %d is read-only", item.RegisterType)
+		}
+
+		if err != nil {
+			hasError = true
+			result.Status = "error"
+			result.Error = err.Error()
+		} else {
+			result.Status = "ok"
+		}
+
+		results[i] = result
+	}
+
+	if hasError {
+		c.JSON(http.StatusPartialContent, gin.H{"results": results})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
 func decodeRegisterValue(data []byte) uint16 {

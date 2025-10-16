@@ -74,6 +74,10 @@
             cursor: not-allowed;
         }
 
+        .error {
+            color: #cb3333;
+        }
+
         .button-delete-all {
             background-color: #cb3333; /* Red background */
         }
@@ -181,6 +185,56 @@
 
         .serial-port-row .button-inline {
             flex: 0 0 auto;
+        }
+
+        .operation-tabs {
+            display: flex;
+            margin: 10px 0;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+        }
+
+        .operation-pane {
+            display: none;
+            margin-top: 10px;
+        }
+
+        .operation-pane.active {
+            display: block;
+        }
+
+        .write-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            gap: 8px;
+        }
+
+        .write-name,
+        .write-address,
+        .write-value {
+            flex: 1;
+            padding: 8px;
+            margin: 5px 0;
+        }
+
+        .write-type-select {
+            margin: 5px 0;
+        }
+
+        .write-status {
+            min-width: 120px;
+            font-size: 12px;
+            color: #555;
+        }
+
+        .write-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
         .download-button {
@@ -366,25 +420,37 @@
             </div>
         </div>
         <div class="right-panel">
-            <div class="card card-operation" id="valueCard">
-                <!-- Data retrieval operations -->
-                <h1>Read Data</h1>
-                <div id="input-button-top">
-                    <button class="button-common" onclick="addInput()">+ Add Address</button>
-                    <button class="button-common" onclick="callApi()">⏍ Read Values</button>
-                    <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
-                    <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+            <div class="card card-operation" id="operationCard">
+                <div class="operation-tabs">
+                    <button class="tab-button active" data-operation="read">Read</button>
+                    <button class="tab-button" data-operation="write">Write</button>
                 </div>
-                <div id="inputContainer">
+                <div id="readPanel" class="operation-pane active">
+                    <h1>Read Data</h1>
+                    <div id="input-button-top">
+                        <button class="button-common" onclick="addInput()">+ Add Address</button>
+                        <button class="button-common" onclick="callApi()">⏍ Read Values</button>
+                        <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
+                        <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                    </div>
+                    <div id="inputContainer"></div>
+                    <div class="input-button-bottom" id="input-button-bottom">
+                        <button class="button-common" onclick="addInput()">+ Add Address</button>
+                        <button class="button-common" onclick="callApi()">⏍ Read Values</button>
+                        <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
+                        <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                    </div>
                 </div>
-                <div class="input-button-bottom" id="input-button-bottom">
-                    <button class="button-common" onclick="addInput()">+ Add Address</button>
-                    <button class="button-common" onclick="callApi()">⏍ Read Values</button>
-                    <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
-                    <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                <div id="writePanel" class="operation-pane">
+                    <h1>Write Data</h1>
+                    <div class="write-controls">
+                        <button class="button-common" onclick="addWriteRow()">+ Add Item</button>
+                        <button class="button-common" onclick="callWriteApi()">⏎ Write Values</button>
+                        <button class="button-common button-delete-all" onclick="cleanWriteRows()">x Clear Items</button>
+                    </div>
+                    <div id="writeContainer"></div>
                 </div>
             </div>
-            
         </div>
     </div>
     <div class="vsrsion-infos" id="versionInfo">
@@ -395,13 +461,22 @@
     <script>
         const CUSTOM_SERIAL_OPTION = '__serial_custom__';
         let connectionMode = 'tcp';
+        let operationMode = 'read';
         let serialPortsLoaded = false;
         let serialPortsLoading = false;
         let pendingSerialPortValue = null;
+        let writeRowsInitialized = false;
 
         document.addEventListener('DOMContentLoaded', function() {
+            const storedOperationMode = localStorage.getItem('operationMode');
+            if (storedOperationMode === 'read' || storedOperationMode === 'write') {
+                operationMode = storedOperationMode;
+            }
+
             ajustForConversionCard();
             initConnectionTabs();
+            initWriteRows();
+            initOperationTabs();
             needDownload();
             loadServerConfig();
             fetchSerialPorts(false);
@@ -531,7 +606,7 @@
         }
 
         function initConnectionTabs() {
-            const tabButtons = document.querySelectorAll('.tab-button');
+            const tabButtons = document.querySelectorAll('.connection-tabs .tab-button');
             tabButtons.forEach(button => {
                 button.addEventListener('click', () => {
                     const mode = button.getAttribute('data-connection');
@@ -561,7 +636,7 @@
 
             connectionMode = mode;
 
-            document.querySelectorAll('.tab-button').forEach(button => {
+            document.querySelectorAll('.connection-tabs .tab-button').forEach(button => {
                 const isActive = button.getAttribute('data-connection') === mode;
                 button.classList.toggle('active', isActive);
             });
@@ -584,6 +659,46 @@
             } else {
                 toggleCustomSerialPort('');
             }
+        }
+
+        function initOperationTabs() {
+            const buttons = document.querySelectorAll('.operation-tabs .tab-button');
+            buttons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const mode = button.getAttribute('data-operation');
+                    setOperationMode(mode);
+                });
+            });
+
+            setOperationMode(operationMode);
+        }
+
+        function setOperationMode(mode) {
+            if (mode !== 'read' && mode !== 'write') {
+                mode = 'read';
+            }
+
+            operationMode = mode;
+
+            document.querySelectorAll('.operation-tabs .tab-button').forEach(button => {
+                const isActive = button.getAttribute('data-operation') === mode;
+                button.classList.toggle('active', isActive);
+            });
+
+            const readPane = document.getElementById('readPanel');
+            const writePane = document.getElementById('writePanel');
+            if (readPane) {
+                readPane.classList.toggle('active', mode === 'read');
+            }
+            if (writePane) {
+                writePane.classList.toggle('active', mode === 'write');
+            }
+
+            if (mode === 'write') {
+                focusFirstWriteRow();
+            }
+
+            localStorage.setItem('operationMode', operationMode);
         }
 
         function fetchSerialPorts(force) {
@@ -956,11 +1071,13 @@
         }
 
         const typeOptions = [
-            { value: '1', text: 'Coil (0x01)' },
-            { value: '2', text: 'Discrete Input (0x02)' },
-            { value: '3', text: 'Input Register (0x04)' },
-            { value: '4', text: 'Holding Register (0x03)' }
+            { value: '1', text: 'Coil (0x01)', writable: true },
+            { value: '2', text: 'Discrete Input (0x02)', writable: false },
+            { value: '3', text: 'Input Register (0x04)', writable: false },
+            { value: '4', text: 'Holding Register (0x03)', writable: true }
         ];
+
+        const writableTypeOptions = typeOptions.filter(option => option.writable);
 
         function addInput(name = '', addr = '', type = '4') {
             const container = document.getElementById('inputContainer');
@@ -1067,6 +1184,248 @@
             })
             .catch(error => {
                 alert(error.message); // Display error notification
+            });
+        }
+
+        function initWriteRows() {
+            if (writeRowsInitialized) {
+                return;
+            }
+
+            writeRowsInitialized = true;
+
+            let storedRows = [];
+            try {
+                storedRows = JSON.parse(localStorage.getItem('writeRows')) || [];
+            } catch (error) {
+                storedRows = [];
+            }
+
+            if (!Array.isArray(storedRows) || storedRows.length === 0) {
+                addWriteRow();
+            } else {
+                storedRows.forEach(row => {
+                    addWriteRow(row.name || '', row.address || '', row.type || '4', row.value || '');
+                });
+            }
+        }
+
+        function addWriteRow(name = '', addr = '', type = '4', value = '', statusText = '') {
+            const container = document.getElementById('writeContainer');
+            if (!container) {
+                return;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'write-row';
+
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.placeholder = 'Label (optional)';
+            nameInput.className = 'write-name';
+            nameInput.value = name;
+
+            const typeSelect = document.createElement('select');
+            typeSelect.className = 'write-type-select';
+            writableTypeOptions.forEach(option => {
+                const opt = document.createElement('option');
+                opt.value = option.value;
+                opt.textContent = option.text;
+                opt.selected = option.value === type;
+                typeSelect.appendChild(opt);
+            });
+
+            const addressInput = document.createElement('input');
+            addressInput.type = 'number';
+            addressInput.placeholder = 'Address';
+            addressInput.className = 'write-address';
+            addressInput.value = addr;
+
+            const valueInput = document.createElement('input');
+            valueInput.type = 'number';
+            valueInput.placeholder = 'Value';
+            valueInput.className = 'write-value';
+            valueInput.value = value;
+
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'write-status';
+            statusSpan.textContent = statusText;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = 'X';
+            removeBtn.className = 'remove-btn';
+            removeBtn.addEventListener('click', () => {
+                row.remove();
+                saveWriteRows();
+            });
+
+            const persistHandler = () => {
+                statusSpan.textContent = '';
+                statusSpan.classList.remove('error');
+                saveWriteRows();
+            };
+
+            nameInput.addEventListener('input', persistHandler);
+            typeSelect.addEventListener('change', persistHandler);
+            addressInput.addEventListener('input', persistHandler);
+            valueInput.addEventListener('input', persistHandler);
+
+            row.appendChild(nameInput);
+            row.appendChild(typeSelect);
+            row.appendChild(addressInput);
+            row.appendChild(valueInput);
+            row.appendChild(statusSpan);
+            row.appendChild(removeBtn);
+
+            container.appendChild(row);
+            saveWriteRows();
+        }
+
+        function saveWriteRows() {
+            const rows = Array.from(document.querySelectorAll('.write-row')).map(row => {
+                return {
+                    name: row.querySelector('.write-name')?.value || '',
+                    type: row.querySelector('.write-type-select')?.value || '4',
+                    address: row.querySelector('.write-address')?.value || '',
+                    value: row.querySelector('.write-value')?.value || ''
+                };
+            });
+            localStorage.setItem('writeRows', JSON.stringify(rows));
+        }
+
+        function cleanWriteRows() {
+            const container = document.getElementById('writeContainer');
+            if (!container) {
+                return;
+            }
+            container.innerHTML = '';
+            addWriteRow();
+        }
+
+        function focusFirstWriteRow() {
+            if (operationMode !== 'write') {
+                return;
+            }
+            const firstAddress = document.querySelector('.write-row .write-address');
+            if (firstAddress) {
+                firstAddress.focus();
+            }
+        }
+
+        function callWriteApi() {
+            saveWriteRows();
+            const rows = Array.from(document.querySelectorAll('.write-row'));
+            if (rows.length === 0) {
+                return;
+            }
+
+            const items = [];
+            const statusRefs = [];
+
+            rows.forEach(row => {
+                const typeSelect = row.querySelector('.write-type-select');
+                const addressInput = row.querySelector('.write-address');
+                const valueInput = row.querySelector('.write-value');
+                const statusSpan = row.querySelector('.write-status');
+
+                if (statusSpan) {
+                    statusSpan.textContent = '';
+                    statusSpan.classList.remove('error');
+                }
+
+                const address = parseInt(addressInput?.value, 10);
+                const value = parseInt(valueInput?.value, 10);
+                const registerType = parseInt(typeSelect?.value, 10);
+
+                if (Number.isNaN(address) || Number.isNaN(value) || Number.isNaN(registerType)) {
+                    if (statusSpan) {
+                        statusSpan.textContent = 'Enter valid numbers';
+                        statusSpan.classList.add('error');
+                    }
+                    return;
+                }
+
+                if (address < 0 || address > 65535) {
+                    if (statusSpan) {
+                        statusSpan.textContent = 'Address must be 0-65535';
+                        statusSpan.classList.add('error');
+                    }
+                    return;
+                }
+
+                if (value < 0 || value > 65535) {
+                    if (statusSpan) {
+                        statusSpan.textContent = 'Value must be 0-65535';
+                        statusSpan.classList.add('error');
+                    }
+                    return;
+                }
+
+                if (registerType === 1 && value !== 0 && value !== 1) {
+                    if (statusSpan) {
+                        statusSpan.textContent = 'Coils accept 0 or 1';
+                        statusSpan.classList.add('error');
+                    }
+                    return;
+                }
+
+                items.push({
+                    register_type: registerType,
+                    address: address,
+                    value: value
+                });
+                statusRefs.push(statusSpan);
+                if (statusSpan) {
+                    statusSpan.textContent = 'Sending...';
+                }
+            });
+
+            if (items.length === 0) {
+                return;
+            }
+
+            fetch('/set-value', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ items })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(j => {
+                        throw new Error(j.error || 'Failed to write values');
+                    }).catch(() => {
+                        throw new Error('Failed to write values');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                const results = Array.isArray(data.results) ? data.results : [];
+                statusRefs.forEach((statusSpan, index) => {
+                    if (!statusSpan) {
+                        return;
+                    }
+                    const result = results[index];
+                    if (result && result.status === 'ok') {
+                        statusSpan.textContent = '✓ Written';
+                        statusSpan.classList.remove('error');
+                    } else {
+                        const message = result && result.error ? result.error : 'Write failed';
+                        statusSpan.textContent = message;
+                        statusSpan.classList.add('error');
+                    }
+                });
+            })
+            .catch(error => {
+                statusRefs.forEach(statusSpan => {
+                    if (!statusSpan) {
+                        return;
+                    }
+                    statusSpan.textContent = error.message;
+                    statusSpan.classList.add('error');
+                });
             });
         }
 
