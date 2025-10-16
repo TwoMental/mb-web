@@ -47,7 +47,7 @@
             color: #0056b3;
         }
 
-        input[type="text"], input[type="number"] {
+        input[type="text"], input[type="number"], select {
             padding: 8px;
             margin: 5px 0;
             border: 1px solid #ddd;
@@ -124,6 +124,63 @@
         input.highlight {
             border: 2px solid #ffcc00 !important; /* Border style used when highlighting (overrides defaults) */
             transition: border-color 0.3s ease; /* Add a border-color transition */
+        }
+
+        .connection-tabs {
+            display: flex;
+            margin: 10px 0;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 8px 12px;
+            background-color: #f0f0f0;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .tab-button.active {
+            background-color: #007bff;
+            color: #fff;
+        }
+
+        .connection-pane {
+            display: none;
+            margin-bottom: 10px;
+        }
+
+        .connection-pane.active {
+            display: block;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .serial-port-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .button-inline {
+            padding: 8px 12px;
+            margin: 5px 0;
+        }
+
+        .serial-port-row select {
+            flex: 1;
+            width: 100%;
+        }
+
+        .serial-port-row .button-inline {
+            flex: 0 0 auto;
         }
 
         .download-button {
@@ -255,10 +312,48 @@
             <div class="card card-config" id="modbusCard">
                 <!-- Modbus connection configuration -->
                 <h1>Connection</h1>
-                <label for="host">Host:</label>
-                <input type="text" id="host" value="192.168.1.200" placeholder="Enter host">
-                <label for="port">Port:</label>
-                <input type="number" id="port" value="502" min="1" max="65535" placeholder="Enter port">
+                <div class="connection-tabs">
+                    <button class="tab-button active" data-connection="tcp">TCP</button>
+                    <button class="tab-button" data-connection="rtu">RTU</button>
+                </div>
+                <div id="tcpConfig" class="connection-pane active">
+                    <label for="host">Host:</label>
+                    <input type="text" id="host" value="192.168.1.200" placeholder="Enter host">
+                    <label for="port">Port:</label>
+                    <input type="number" id="port" value="502" min="1" max="65535" placeholder="Enter port">
+                </div>
+                <div id="rtuConfig" class="connection-pane">
+                    <label for="rtuPortSelect">Serial Port:</label>
+                    <div class="serial-port-row">
+                        <select id="rtuPortSelect"></select>
+                        <button type="button" class="button-common button-inline" id="refreshSerialPorts">Refresh</button>
+                    </div>
+                    <input type="text" id="rtuPortCustom" class="conversion-input hidden" placeholder="Enter serial port">
+                    <label for="baudRate">Baud Rate:</label>
+                    <select id="baudRate">
+                        <option value="9600">9600</option>
+                        <option value="19200">19200</option>
+                        <option value="38400">38400</option>
+                        <option value="57600">57600</option>
+                        <option value="115200">115200</option>
+                    </select>
+                    <label for="dataBits">Data Bits:</label>
+                    <select id="dataBits">
+                        <option value="7">7</option>
+                        <option value="8" selected>8</option>
+                    </select>
+                    <label for="parity">Parity:</label>
+                    <select id="parity">
+                        <option value="N" selected>None</option>
+                        <option value="E">Even</option>
+                        <option value="O">Odd</option>
+                    </select>
+                    <label for="stopBits">Stop Bits:</label>
+                    <select id="stopBits">
+                        <option value="1" selected>1</option>
+                        <option value="2">2</option>
+                    </select>
+                </div>
                 <label for="slaveId">Slave ID:</label>
                 <input type="number" id="slaveId" value="1" min="0" max="247" placeholder="Enter slave ID (0-247)">
                 <button class="button-common" id="configureButton" onclick="configureServer()">Connect</button>
@@ -298,10 +393,18 @@
     </div>
 
     <script>
+        const CUSTOM_SERIAL_OPTION = '__serial_custom__';
+        let connectionMode = 'tcp';
+        let serialPortsLoaded = false;
+        let serialPortsLoading = false;
+        let pendingSerialPortValue = null;
+
         document.addEventListener('DOMContentLoaded', function() {
             ajustForConversionCard();
+            initConnectionTabs();
             needDownload();
             loadServerConfig();
+            fetchSerialPorts(false);
             initAddresses();  // Restore saved addresses when the page loads
             autoCal();  // Rebind conversion shortcuts automatically
             versionInfo();
@@ -427,19 +530,242 @@
             });
         }
 
+        function initConnectionTabs() {
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const mode = button.getAttribute('data-connection');
+                    setConnectionMode(mode);
+                });
+            });
+
+            const portSelect = document.getElementById('rtuPortSelect');
+            if (portSelect) {
+                portSelect.addEventListener('change', () => {
+                    toggleCustomSerialPort(portSelect.value);
+                });
+            }
+
+            const refreshButton = document.getElementById('refreshSerialPorts');
+            if (refreshButton) {
+                refreshButton.addEventListener('click', () => fetchSerialPorts(true));
+            }
+
+            setConnectionMode(connectionMode);
+        }
+
+        function setConnectionMode(mode) {
+            if (!mode) {
+                return;
+            }
+
+            connectionMode = mode;
+
+            document.querySelectorAll('.tab-button').forEach(button => {
+                const isActive = button.getAttribute('data-connection') === mode;
+                button.classList.toggle('active', isActive);
+            });
+
+            document.querySelectorAll('.connection-pane').forEach(pane => {
+                const isTcp = mode === 'tcp' && pane.id === 'tcpConfig';
+                const isRtu = mode === 'rtu' && pane.id === 'rtuConfig';
+                pane.classList.toggle('active', isTcp || isRtu);
+            });
+
+            if (mode === 'rtu' && !serialPortsLoaded && !serialPortsLoading) {
+                fetchSerialPorts(false);
+            }
+
+            if (mode === 'rtu') {
+                const select = document.getElementById('rtuPortSelect');
+                if (select) {
+                    toggleCustomSerialPort(select.value);
+                }
+            } else {
+                toggleCustomSerialPort('');
+            }
+        }
+
+        function fetchSerialPorts(force) {
+            if (serialPortsLoading) {
+                return;
+            }
+
+            if (force) {
+                serialPortsLoaded = false;
+            }
+
+            if (serialPortsLoaded && !force) {
+                if (pendingSerialPortValue !== null) {
+                    setSerialPortSelection(pendingSerialPortValue);
+                    pendingSerialPortValue = null;
+                }
+                return;
+            }
+
+            serialPortsLoading = true;
+            fetch("/serial-ports")
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch serial ports');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const ports = Array.isArray(data.ports) ? data.ports : [];
+                    populateSerialPortOptions(ports);
+                    serialPortsLoaded = true;
+
+                    if (pendingSerialPortValue !== null) {
+                        setSerialPortSelection(pendingSerialPortValue);
+                        pendingSerialPortValue = null;
+                    } else {
+                        toggleCustomSerialPort(document.getElementById('rtuPortSelect').value);
+                    }
+                })
+                .catch(error => {
+                    console.error("Error fetching serial ports:", error);
+                    populateSerialPortOptions([]);
+                    serialPortsLoaded = false;
+
+                    if (pendingSerialPortValue !== null) {
+                        setSerialPortSelection(pendingSerialPortValue);
+                        pendingSerialPortValue = null;
+                    }
+                })
+                .finally(() => {
+                    serialPortsLoading = false;
+                });
+        }
+
+        function populateSerialPortOptions(ports) {
+            const select = document.getElementById('rtuPortSelect');
+            if (!select) {
+                return;
+            }
+
+            select.innerHTML = '';
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = ports.length ? 'Select a serial port' : 'No ports detected';
+            select.appendChild(placeholder);
+
+            ports.forEach(port => {
+                const option = document.createElement('option');
+                option.value = port;
+                option.textContent = port;
+                select.appendChild(option);
+            });
+
+            const customOption = document.createElement('option');
+            customOption.value = CUSTOM_SERIAL_OPTION;
+            customOption.textContent = 'Custom...';
+            select.appendChild(customOption);
+        }
+
+        function setSerialPortSelection(value) {
+            const select = document.getElementById('rtuPortSelect');
+            const customInput = document.getElementById('rtuPortCustom');
+            if (!select || !customInput) {
+                return;
+            }
+
+            if (!value) {
+                select.value = '';
+                toggleCustomSerialPort('');
+                customInput.value = '';
+                return;
+            }
+
+            const options = Array.from(select.options);
+            const matched = options.find(option => option.value === value);
+            if (matched) {
+                select.value = value;
+                toggleCustomSerialPort(value);
+                customInput.value = '';
+                return;
+            }
+
+            select.value = CUSTOM_SERIAL_OPTION;
+            toggleCustomSerialPort(CUSTOM_SERIAL_OPTION);
+            customInput.value = value;
+        }
+
+        function toggleCustomSerialPort(selectedValue) {
+            const customInput = document.getElementById('rtuPortCustom');
+            if (!customInput) {
+                return;
+            }
+
+            if (selectedValue === CUSTOM_SERIAL_OPTION) {
+                customInput.classList.remove('hidden');
+                customInput.focus();
+            } else {
+                customInput.classList.add('hidden');
+                if (selectedValue !== CUSTOM_SERIAL_OPTION && selectedValue !== '') {
+                    customInput.value = selectedValue;
+                }
+            }
+        }
+
         function loadServerConfig() {
+            const storedMode = localStorage.getItem('connectionMode');
+            if (storedMode === 'tcp' || storedMode === 'rtu') {
+                connectionMode = storedMode;
+            }
+            setConnectionMode(connectionMode);
+
+            const hostInput = document.getElementById('host');
+            const portInput = document.getElementById('port');
+            const slaveInput = document.getElementById('slaveId');
+
             const storedHost = localStorage.getItem('host');
             const storedPort = localStorage.getItem('port');
             const storedSlaveId = localStorage.getItem('slaveId');
 
-            if (storedHost) {
-                document.getElementById('host').value = storedHost;
+            if (storedHost && hostInput) {
+                hostInput.value = storedHost;
             }
-            if (storedPort) {
-                document.getElementById('port').value = storedPort;
+            if (storedPort && portInput) {
+                portInput.value = storedPort;
             }
-            if (storedSlaveId) {
-                document.getElementById('slaveId').value = storedSlaveId;
+            if (storedSlaveId && slaveInput) {
+                slaveInput.value = storedSlaveId;
+            }
+
+            const storedBaudRate = localStorage.getItem('rtuBaudRate') || '9600';
+            const storedDataBits = localStorage.getItem('rtuDataBits') || '8';
+            const storedParity = localStorage.getItem('rtuParity') || 'N';
+            const storedStopBits = localStorage.getItem('rtuStopBits') || '1';
+            const storedSerialPort = localStorage.getItem('rtuPort');
+
+            const baudRateSelect = document.getElementById('baudRate');
+            const dataBitsSelect = document.getElementById('dataBits');
+            const paritySelect = document.getElementById('parity');
+            const stopBitsSelect = document.getElementById('stopBits');
+
+            if (baudRateSelect) {
+                baudRateSelect.value = storedBaudRate;
+            }
+            if (dataBitsSelect) {
+                dataBitsSelect.value = storedDataBits;
+            }
+            if (paritySelect) {
+                paritySelect.value = storedParity;
+            }
+            if (stopBitsSelect) {
+                stopBitsSelect.value = storedStopBits;
+            }
+
+            if (storedSerialPort) {
+                pendingSerialPortValue = storedSerialPort;
+                if (serialPortsLoaded) {
+                    setSerialPortSelection(storedSerialPort);
+                    pendingSerialPortValue = null;
+                }
+            } else {
+                toggleCustomSerialPort('');
             }
         }
 
@@ -480,65 +806,98 @@
             responseDisplay.classList.remove('error');
 
             const button = document.getElementById('configureButton');
-            const host = document.getElementById('host').value;
-            const port = parseInt(document.getElementById('port').value, 10); // Ensure the port is an integer
-            const slaveId = parseInt(document.getElementById('slaveId').value, 10); // Ensure the slave ID is an integer
+            const slaveIdInput = document.getElementById('slaveId');
+            const slaveId = parseInt(slaveIdInput.value, 10);
 
-            if (isNaN(port) || port < 1 || port > 65535) {
-                alert("Enter a valid port (1-65535).");
-                return;
-            }
             if (isNaN(slaveId) || slaveId < 0 || slaveId > 247) {
                 alert("Enter a valid slave ID (0-247).");
                 return;
-            }   
+            }
+
+            const payload = {
+                mode: connectionMode,
+                slave_id: slaveId,
+            };
+
+            if (connectionMode === 'tcp') {
+                const hostValue = document.getElementById('host').value.trim();
+                const portValue = parseInt(document.getElementById('port').value, 10);
+
+                if (!hostValue) {
+                    alert("Enter a valid host.");
+                    return;
+                }
+                if (isNaN(portValue) || portValue < 1 || portValue > 65535) {
+                    alert("Enter a valid port (1-65535).");
+                    return;
+                }
+
+                payload.tcp = {
+                    host: hostValue,
+                    port: portValue,
+                };
+
+                localStorage.setItem('host', hostValue);
+                localStorage.setItem('port', portValue.toString());
+            } else {
+                const portSelect = document.getElementById('rtuPortSelect');
+                const customPortInput = document.getElementById('rtuPortCustom');
+                const baudRate = parseInt(document.getElementById('baudRate').value, 10);
+                const dataBits = parseInt(document.getElementById('dataBits').value, 10);
+                const parity = document.getElementById('parity').value;
+                const stopBits = parseInt(document.getElementById('stopBits').value, 10);
+
+                let serialPort = '';
+                if (portSelect.value === CUSTOM_SERIAL_OPTION) {
+                    serialPort = customPortInput.value.trim();
+                } else {
+                    serialPort = portSelect.value;
+                }
+
+                if (!serialPort) {
+                    alert("Select or enter a serial port.");
+                    return;
+                }
+
+                payload.rtu = {
+                    port: serialPort,
+                    baud_rate: baudRate,
+                    data_bits: dataBits,
+                    parity: parity,
+                    stop_bits: stopBits,
+                };
+
+                localStorage.setItem('rtuPort', serialPort);
+                localStorage.setItem('rtuBaudRate', baudRate.toString());
+                localStorage.setItem('rtuDataBits', dataBits.toString());
+                localStorage.setItem('rtuParity', parity);
+                localStorage.setItem('rtuStopBits', stopBits.toString());
+            }
+
+            localStorage.setItem('slaveId', slaveId.toString());
+            localStorage.setItem('connectionMode', connectionMode);
 
             button.disabled = true;  // Disable button to prevent duplicate submissions
             button.textContent = 'Connecting...';  // Update button label to show loading state
-
-            // Store the configuration in localStorage
-            localStorage.setItem('host', host);
-            localStorage.setItem('port', port.toString());
-            localStorage.setItem('slaveId', slaveId.toString());
 
             fetch('/set-server', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    host: host,
-                    port: port,
-                    slave_id: slaveId  // Use snake_case to match the backend field
-                })
+                body: JSON.stringify(payload)
             })
             .then(response => {
                 if (!response.ok) {
-                    // Throw an error that the catch block can handle
                     return response.json().then(j => {
                         throw new Error('Something went wrong [' + response.status + '] ' + j.error);
                     });
                 }
-                return response.json(); // Return the JSON payload
+                return response.json();
             })
-            .then(data => {
+            .then(() => {
                 responseDisplay.textContent = 'Connected!';
                 responseDisplay.classList.remove('error');
-                // // Reorder cards
-                // setTimeout(() => {
-                //     // Logic to run after a successful connection
-                //     const modbusCard = document.getElementById('modbusCard');
-                //     const conversionCard = document.getElementById('conversionCard');
-                //     const container = modbusCard.parentNode;
-
-                //     // Remove the current elements
-                //     container.removeChild(modbusCard);
-                //     container.removeChild(conversionCard);
-
-                //     // Append elements in the new order
-                //     container.insertBefore(conversionCard, container.firstChild); // Move the conversion card to the top
-                //     container.appendChild(modbusCard); // Move the Modbus card to the bottom
-                // }, 1000); // Delay one second to simulate the connection
             })
             .catch(error => {
                 responseDisplay.textContent = error?.message ?? String(error);
@@ -610,7 +969,7 @@
 
             const addrNameInput = document.createElement('input');
             addrNameInput.type = 'text';
-            addrNameInput.placeholder = 'Address label (optional)';
+            addrNameInput.placeholder = 'Label (optional)';
             addrNameInput.value = name;  // Set the default value
             addrNameInput.className = 'input-address-name';
 
@@ -627,7 +986,7 @@
 
             const addrInput = document.createElement('input');
             addrInput.type = 'text';
-            addrInput.placeholder = 'Address ID';
+            addrInput.placeholder = 'Address';
             addrInput.value = addr;  // Set the default value
             addrInput.className = 'input-address';
 

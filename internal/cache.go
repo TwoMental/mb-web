@@ -14,7 +14,7 @@ func DeleteConn(key string) {
 	lock.Lock()
 	defer lock.Unlock()
 	if client, ok := clients[key]; ok {
-		client.H.Close()
+		client.Close()
 		delete(clients, key)
 	}
 }
@@ -40,7 +40,7 @@ func CleanConn() {
 	for key, client := range clients {
 		if time.Since(client.LastAlive) > 30*time.Minute {
 			todo = append(todo, key)
-			client.H.Close()
+			client.Close()
 		}
 	}
 	for _, addr := range todo {

@@ -5,17 +5,19 @@ It wraps a `gin` HTTP server, manages per-user connections to a Modbus target, a
 reading register values and doing quick binary/decimal/hex conversions.
 
 ## Features
-- Launches a local web UI (`/home`) that can connect to a Modbus/TCP server and keep the session alive per browser.
-- Reads values from coils, discrete inputs, input registers, and holding registers by address.
-- Provides at-a-glance conversions between signed/unsigned integers, binary, and hexadecimal representations.
-- Optionally serves prebuilt binaries from the `downloads` directory so the UI can proxy file downloads.
-- Exposes JSON APIs (`/set-server`, `/get-value`, `/version-info`, `/allow-download`, `/resource-list`) that the UI uses and that other clients can reuse.
+- Connect to Modbus targets over TCP or RTU (serial) with per-browser session management.
+- Launch a local web UI (`/home`) that guides you through TCP host/port or RTU serial settings, including detected port suggestions.
+- Read values from coils, discrete inputs, input registers, and holding registers by address.
+- Convert results between signed/unsigned integers, binary, and hexadecimal representations at a glance.
+- Optionally serve prebuilt binaries from the `downloads` directory so the UI can proxy file downloads.
+- Expose JSON APIs (`/set-server`, `/get-value`, `/version-info`, `/allow-download`, `/serial-ports`, `/resource-list`) that the UI uses and that other clients can reuse.
 
 ## Getting Started
 
 ### Prerequisites
 - Go 1.21 or newer
 - A Modbus/TCP server you can reach from the machine running this project
+- (Optional) Access to a serial adapter/port when working with Modbus RTU devices
 
 ### Run in place
 ```bash
@@ -48,7 +50,7 @@ make build-all
 ## Using the Web UI
 
 1. Open the app in your browser (the server will usually launch it automatically).
-2. Enter the Modbus host, port, and slave ID, then click **Connect** to establish the session.
+2. Choose the **TCP** or **RTU** tab, fill in the relevant connection fields (host/port or serial parameters plus slave ID), then click **Connect**.
 3. Add addresses with the **Add Address** button, pick the register type, and optionally label each address.
 4. Click **Read Values** to query the selected addresses. Results include raw bytes for quick inspection.
 5. Use the conversion card at the top to translate between decimal, binary, and hex, or double-click the values in the results table to auto-fill the converter.
@@ -63,6 +65,7 @@ All endpoints respond with JSON.
 | `POST` | `/get-value` | Read values for a list of addresses (`register_type`, `address`). |
 | `GET` | `/version-info` | Return build time and git commit (populated via linker flags). |
 | `GET` | `/allow-download` | Indicate whether download proxying is enabled. |
+| `GET` | `/serial-ports` | Enumerate available serial ports for RTU connections. |
 | `GET` | `/resource-list` | List files in the configured download folder (only when proxying). |
 | `GET` | `/downloads/*` | Serve files from the download folder (only when proxying). |
 
@@ -74,7 +77,6 @@ All endpoints respond with JSON.
 - `downloads/` — Optional artifacts exposed when `-proxyDownload` is enabled.
 
 ## TODOs
-- [ ] Modbus RTU
 - [ ] Write
 - [ ] Auto reconnect
 - [ ] Read/Write block (multiple register)
@@ -82,6 +84,7 @@ All endpoints respond with JSON.
 - [ ] Ignore register
 - [ ] Auto refresh (only for read)
 - [ ] Multi connection
+- [x] Modbus RTU
 
 ## License
 

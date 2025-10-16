@@ -73,6 +73,7 @@ func main() {
 	r.GET("/allow-download", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"allow": proxyDownload})
 	})
+	r.GET("/serial-ports", serialPortsHandler)
 
 	if proxyDownload {
 		r.Static("/downloads", downloadFolder)
@@ -168,13 +169,13 @@ func getValueHandler(c *gin.Context) {
 		var err error
 		switch id.RegisterType {
 		case internal.RegisterTypeCoil:
-			rr, err = client.C.ReadCoils(id.Address, 1)
+			rr, err = client.Client.ReadCoils(id.Address, 1)
 		case internal.RegisterTypeDiscreteInput:
-			rr, err = client.C.ReadDiscreteInputs(id.Address, 1)
+			rr, err = client.Client.ReadDiscreteInputs(id.Address, 1)
 		case internal.RegisterTypeInputRegister:
-			rr, err = client.C.ReadInputRegisters(id.Address, 1)
+			rr, err = client.Client.ReadInputRegisters(id.Address, 1)
 		case internal.RegisterTypeHoldingRegister, internal.RegisterTypeDefault:
-			rr, err = client.C.ReadHoldingRegisters(id.Address, 1)
+			rr, err = client.Client.ReadHoldingRegisters(id.Address, 1)
 		default:
 			err = fmt.Errorf("invalid register type %d", id.RegisterType)
 		}
@@ -205,6 +206,15 @@ func resourceListHandler(c *gin.Context) {
 		res = append(res, file.Name())
 	}
 	c.JSON(http.StatusOK, gin.H{"files": res})
+}
+
+func serialPortsHandler(c *gin.Context) {
+	ports, err := internal.ListSerialPorts()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list serial ports", "details": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ports": ports})
 }
 
 func decodeRegisterValue(data []byte) uint16 {
