@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -74,6 +75,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"allow": proxyDownload})
 	})
 	r.GET("/serial-ports", serialPortsHandler)
+	r.GET("/connection-status", connectionStatusHandler)
 
 	if proxyDownload {
 		r.Static("/downloads", downloadFolder)
@@ -177,26 +179,11 @@ func getValueHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No Modbus server connected"})
 		return
 	}
-	client.LastAlive = time.Now()
 
 	// Read values from Modbus server
 	results := make([]valueDetail, len(req.IDs))
 	for i, id := range req.IDs {
-		var rr []byte
-		var err error
-		switch id.RegisterType {
-		case internal.RegisterTypeCoil:
-			rr, err = client.Client.ReadCoils(id.Address, 1)
-		case internal.RegisterTypeDiscreteInput:
-			rr, err = client.Client.ReadDiscreteInputs(id.Address, 1)
-		case internal.RegisterTypeInputRegister:
-			rr, err = client.Client.ReadInputRegisters(id.Address, 1)
-		case internal.RegisterTypeHoldingRegister, internal.RegisterTypeDefault:
-			rr, err = client.Client.ReadHoldingRegisters(id.Address, 1)
-		default:
-			err = fmt.Errorf("invalid register type %d", id.RegisterType)
-		}
-
+		rr, err := readWithAutoReconnect(client, id.RegisterType, id.Address)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError,
 				gin.H{"error": "Failed to read value from Modbus server", "details": err.Error()},
@@ -234,6 +221,28 @@ func serialPortsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ports": ports})
 }
 
+func connectionStatusHandler(c *gin.Context) {
+	client, ok := internal.GetConn(internal.GetUserID(c))
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"connected": false})
+		return
+	}
+
+	_ = client.EnsureConnection(0)
+	status := client.Status()
+	response := gin.H{
+		"connected": status.Connected,
+		"mode":      status.Mode,
+	}
+	if !status.LastAlive.IsZero() {
+		response["last_alive"] = status.LastAlive.Format(time.RFC3339)
+	}
+	if status.LastError != "" {
+		response["last_error"] = status.LastError
+	}
+	c.JSON(http.StatusOK, response)
+}
+
 func setValueHandler(c *gin.Context) {
 	req := setValueRequest{}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -251,27 +260,12 @@ func setValueHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No Modbus server connected"})
 		return
 	}
-	client.LastAlive = time.Now()
 
 	results := make([]writeResult, len(req.Items))
 	hasError := false
 	for i, item := range req.Items {
 		result := writeResult{RegisterType: item.RegisterType, Address: item.Address}
-		var err error
-
-		switch item.RegisterType {
-		case internal.RegisterTypeCoil:
-			value := uint16(0x0000)
-			if item.Value != 0 {
-				value = 0xFF00
-			}
-			_, err = client.Client.WriteSingleCoil(item.Address, value)
-		case internal.RegisterTypeHoldingRegister, internal.RegisterTypeDefault:
-			_, err = client.Client.WriteSingleRegister(item.Address, item.Value)
-		default:
-			err = fmt.Errorf("register type %d is read-only", item.RegisterType)
-		}
-
+		err := writeWithAutoReconnect(client, item)
 		if err != nil {
 			hasError = true
 			result.Status = "error"
@@ -300,4 +294,53 @@ func decodeRegisterValue(data []byte) uint16 {
 	default:
 		return binary.BigEndian.Uint16(data[:2])
 	}
+}
+
+func readWithAutoReconnect(server *internal.ModbusServer, registerType internal.RegisterType, address uint16) ([]byte, error) {
+	data, err := server.ReadRegister(registerType, address)
+	if err == nil {
+		server.MarkSuccess()
+		return data, nil
+	}
+
+	firstErr := err
+	if recErr := server.Reconnect(); recErr != nil {
+		server.MarkFailure(recErr)
+		return nil, fmt.Errorf("read failed (%v) and reconnect failed: %w", firstErr, recErr)
+	}
+
+	data, err = server.ReadRegister(registerType, address)
+	if err != nil {
+		server.MarkFailure(err)
+		return nil, err
+	}
+	server.MarkSuccess()
+	return data, nil
+}
+
+func writeWithAutoReconnect(server *internal.ModbusServer, item writeValueRequest) error {
+	err := server.WriteSingle(item.RegisterType, item.Address, item.Value)
+	if err == nil {
+		server.MarkSuccess()
+		return nil
+	}
+
+	if errors.Is(err, internal.ErrReadOnly) {
+		server.MarkFailure(err)
+		return err
+	}
+
+	firstErr := err
+	if recErr := server.Reconnect(); recErr != nil {
+		server.MarkFailure(recErr)
+		return fmt.Errorf("write failed (%v) and reconnect failed: %w", firstErr, recErr)
+	}
+
+	err = server.WriteSingle(item.RegisterType, item.Address, item.Value)
+	if err != nil {
+		server.MarkFailure(err)
+		return err
+	}
+	server.MarkSuccess()
+	return nil
 }

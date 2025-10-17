@@ -237,6 +237,42 @@
             margin-bottom: 10px;
         }
 
+        .action-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+
+        .action-bar.section-split {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .action-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .primary-action {
+            background-color: #28a745;
+        }
+
+        .primary-action:hover {
+            background-color: #1f7d34;
+        }
+
+        .primary-action.secondary {
+            background-color: #28a745;
+        }
+
+        .primary-action.secondary:hover {
+            background-color: #1f7d34;
+        }
+
         .download-button {
             background-color: #007bff;
             color: white;
@@ -426,27 +462,43 @@
                     <button class="tab-button" data-operation="write">Write</button>
                 </div>
                 <div id="readPanel" class="operation-pane active">
-                    <h1>Read Data</h1>
-                    <div id="input-button-top">
-                        <button class="button-common" onclick="addInput()">+ Add Address</button>
-                        <button class="button-common" onclick="callApi()">⏍ Read Values</button>
-                        <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
-                        <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                    <div class="action-bar">
+                        <h1 style="margin: 0 20px 0 0;">Read Data</h1>
+                        <div class="action-group">
+                            <button class="button-common primary-action" onclick="callApi()">⏍ Read Values</button>
+                        </div>
+                    </div>
+                    <div class="action-bar section-split">
+                        <div class="action-group">
+                            <button class="button-common" onclick="addInput()">+ Add Address</button>
+                            <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
+                            <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                        </div>
                     </div>
                     <div id="inputContainer"></div>
-                    <div class="input-button-bottom" id="input-button-bottom">
-                        <button class="button-common" onclick="addInput()">+ Add Address</button>
-                        <button class="button-common" onclick="callApi()">⏍ Read Values</button>
-                        <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
-                        <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                    <div class="action-bar" id="input-button-bottom">
+                        <div class="action-group">
+                            <button class="button-common" onclick="addInput()">+ Add Address</button>
+                            <button class="button-common button-sort-addr" onclick="sortInputRows()">↓ Sort Addresses</button>
+                            <button class="button-common button-delete-all" onclick="cleanAddress()">x Clear Addresses</button>
+                        </div>
+                        <div class="action-group">
+                            <button class="button-common primary-action" onclick="callApi()">⏍ Read Values</button>
+                        </div>
                     </div>
                 </div>
                 <div id="writePanel" class="operation-pane">
-                    <h1>Write Data</h1>
-                    <div class="write-controls">
-                        <button class="button-common" onclick="addWriteRow()">+ Add Item</button>
-                        <button class="button-common" onclick="callWriteApi()">⏎ Write Values</button>
-                        <button class="button-common button-delete-all" onclick="cleanWriteRows()">x Clear Items</button>
+                    <div class="action-bar">
+                        <h1 style="margin: 0 20px 0 0;">Write Data</h1>
+                        <div class="action-group">
+                            <button class="button-common primary-action secondary" onclick="callWriteApi()">⏎ Write Values</button>
+                        </div>
+                    </div>
+                    <div class="action-bar section-split">
+                        <div class="action-group">
+                            <button class="button-common" onclick="addWriteRow()">+ Add Item</button>
+                            <button class="button-common button-delete-all" onclick="cleanWriteRows()">x Clear Items</button>
+                        </div>
                     </div>
                     <div id="writeContainer"></div>
                 </div>
@@ -460,12 +512,14 @@
 
     <script>
         const CUSTOM_SERIAL_OPTION = '__serial_custom__';
+        const STATUS_POLL_INTERVAL = 5000;
         let connectionMode = 'tcp';
         let operationMode = 'read';
         let serialPortsLoaded = false;
         let serialPortsLoading = false;
         let pendingSerialPortValue = null;
         let writeRowsInitialized = false;
+        let connectionStatusTimer = null;
 
         document.addEventListener('DOMContentLoaded', function() {
             const storedOperationMode = localStorage.getItem('operationMode');
@@ -483,6 +537,7 @@
             initAddresses();  // Restore saved addresses when the page loads
             autoCal();  // Rebind conversion shortcuts automatically
             versionInfo();
+            startConnectionStatusWatcher();
         });
 
         function ajustForConversionCard() {
@@ -824,6 +879,56 @@
             }
         }
 
+        function startConnectionStatusWatcher() {
+            if (connectionStatusTimer) {
+                clearInterval(connectionStatusTimer);
+            }
+            updateConnectionStatus();
+            connectionStatusTimer = setInterval(updateConnectionStatus, STATUS_POLL_INTERVAL);
+        }
+
+        function updateConnectionStatus() {
+            fetch('/connection-status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch connection status');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const responseDisplay = document.getElementById('configResponse');
+                    if (!responseDisplay) {
+                        return;
+                    }
+
+                    if (data.connected) {
+                        const mode = (data.mode || 'unknown').toUpperCase();
+                        let suffix = '';
+                        if (data.last_alive) {
+                            const last = new Date(data.last_alive);
+                            if (!Number.isNaN(last.getTime())) {
+                                suffix = ` • Last response ${last.toLocaleTimeString()}`;
+                            }
+                        }
+                        responseDisplay.textContent = `Connected (${mode})${suffix}`;
+                        responseDisplay.classList.remove('error');
+                    } else if (data.last_error) {
+                        responseDisplay.textContent = `Disconnected: ${data.last_error}`;
+                        responseDisplay.classList.add('error');
+                    } else {
+                        responseDisplay.textContent = 'Not connected';
+                        responseDisplay.classList.add('error');
+                    }
+                })
+                .catch(() => {
+                    const responseDisplay = document.getElementById('configResponse');
+                    if (responseDisplay) {
+                        responseDisplay.textContent = 'Connection status unavailable';
+                        responseDisplay.classList.add('error');
+                    }
+                });
+        }
+
         function loadServerConfig() {
             const storedMode = localStorage.getItem('connectionMode');
             if (storedMode === 'tcp' || storedMode === 'rtu') {
@@ -1013,6 +1118,8 @@
             .then(() => {
                 responseDisplay.textContent = 'Connected!';
                 responseDisplay.classList.remove('error');
+                updateConnectionStatus();
+                startConnectionStatusWatcher();
             })
             .catch(error => {
                 responseDisplay.textContent = error?.message ?? String(error);

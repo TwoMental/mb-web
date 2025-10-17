@@ -7,7 +7,8 @@ reading register values and doing quick binary/decimal/hex conversions.
 ## Features
 - Connect to Modbus targets over TCP or RTU (serial) with per-browser session management.
 - Launch a local web UI (`/home`) that guides you through TCP host/port or RTU serial settings, including detected port suggestions.
-- Switch between read and write operations in the UI to query registers or push updates to coils/holding registers.
+- Switch between read and write operations in the UI to query registers or push updates to coils/holding registers, with clearly distinguished controls.
+- Automatically reconnect dropped sessions and surface live connection status in the UI.
 - Read values from coils, discrete inputs, input registers, and holding registers by address.
 - Convert results between signed/unsigned integers, binary, and hexadecimal representations at a glance.
 - Optionally serve prebuilt binaries from the `downloads` directory so the UI can proxy file downloads.
@@ -68,6 +69,7 @@ All endpoints respond with JSON.
 | `POST` | `/set-value` | Write single coil or holding register values (`register_type`, `address`, `value`). |
 | `GET` | `/version-info` | Return build time and git commit (populated via linker flags). |
 | `GET` | `/allow-download` | Indicate whether download proxying is enabled. |
+| `GET` | `/connection-status` | Report current connection health and last activity. |
 | `GET` | `/serial-ports` | Enumerate available serial ports for RTU connections. |
 | `GET` | `/resource-list` | List files in the configured download folder (only when proxying). |
 | `GET` | `/downloads/*` | Serve files from the download folder (only when proxying). |
@@ -80,13 +82,13 @@ All endpoints respond with JSON.
 - `downloads/` — Optional artifacts exposed when `-proxyDownload` is enabled.
 
 ## TODOs
-- [ ] Write
-- [ ] Auto reconnect
 - [ ] Read/Write block (multiple register)
 - [ ] Setting upload/download
 - [ ] Ignore register
 - [ ] Auto refresh (only for read)
 - [ ] Multi connection
+- [x] Auto reconnect
+- [x] Write
 - [x] Modbus RTU
 
 ## License
